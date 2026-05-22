@@ -1,0 +1,537 @@
+{
+  "name": "PickyMenu — WhatsApp Chatbot",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webhook/:restaurant_id",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-a1b2c3d40001",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "webhookId": "pickymenu-whatsapp-chatbot"
+    },
+
+    {
+      "parameters": {
+        "jsCode": "const params  = $('Webhook Trigger').first().json.params;\nconst body    = $('Webhook Trigger').first().json.body;\nconst rawBody = $('Webhook Trigger').first().json.rawBody;\n\nconst restaurantId        = params.restaurant_id;\nconst whatsappNumber      = body.message?.from;\nconst messageText         = body.message?.text?.body ?? '';\nconst kapsoConversationId = body.conversation?.id;\nconst phoneNumberId       = body.conversation?.phone_number_id;\n\n// Skip non-text messages (images, audio, stickers, etc.)\nif (!messageText.trim()) {\n  return [{ json: { skip: true } }];\n}\n\n// Validate restaurant_id is a UUID\nconst UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nif (!UUID_RE.test(restaurantId)) {\n  throw new Error(`Invalid restaurant_id in URL: ${restaurantId}`);\n}\n\nif (!whatsappNumber) {\n  throw new Error('Missing body.message.from — cannot identify sender');\n}\n\nreturn [{ json: {\n  restaurantId,\n  whatsappNumber,\n  messageText,\n  kapsoConversationId,\n  phoneNumberId,\n  rawBody,\n} }];"
+      },
+      "id": "a1b2c3d4-0002-0002-0002-a1b2c3d40002",
+      "name": "Extract and Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "skip-check",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "a1b2c3d4-0003-0003-0003-a1b2c3d40003",
+      "name": "IF: Skip?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [760, 300]
+    },
+
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"reply\": \"\" }",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "a1b2c3d4-0004-0004-0004-a1b2c3d40004",
+      "name": "Respond — Silent Ignore",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [760, 520]
+    },
+
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/restaurants",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "=eq.{{ $('Extract and Validate').first().json.restaurantId }}"
+            },
+            {
+              "name": "select",
+              "value": "id,name,timezone,kapso_webhook_secret"
+            },
+            {
+              "name": "limit",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-0005-0005-a1b2c3d40005",
+      "name": "Fetch Restaurant",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1040, 300]
+    },
+
+    {
+      "parameters": {
+        "jsCode": "const crypto  = require('crypto');\n\nconst restaurant = $('Fetch Restaurant').first().json;\n\n// Handle array response from Supabase REST API\nconst restaurantRow = Array.isArray(restaurant) ? restaurant[0] : restaurant;\n\nif (!restaurantRow?.id) {\n  throw new Error('Restaurant not found for id: ' + $('Extract and Validate').first().json.restaurantId);\n}\n\nconst secret  = restaurantRow.kapso_webhook_secret ?? '';\nconst rawBody = $('Extract and Validate').first().json.rawBody;\nconst header  = $('Webhook Trigger').first().json.headers['x-webhook-signature'] ?? '';\n\nconst expected = crypto\n  .createHmac('sha256', secret)\n  .update(rawBody, 'utf8')\n  .digest('hex');\n\nif (secret && header !== expected) {\n  throw new Error('Webhook signature mismatch — request rejected');\n}\n\n// Expose restaurant data for downstream nodes\nreturn [{ json: {\n  restaurantId:   restaurantRow.id,\n  restaurantName: restaurantRow.name,\n  timezone:       restaurantRow.timezone,\n  verified:       true,\n} }];"
+      },
+      "id": "a1b2c3d4-0006-0006-0006-a1b2c3d40006",
+      "name": "Verify Signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300]
+    },
+
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  mi.id,\n  mi.name,\n  mi.description,\n  mi.price,\n  mi.chef_recommendation,\n  mi.chef_note,\n  c.name            AS category,\n  c.sort_order      AS category_order,\n  COALESCE(\n    json_agg(\n      json_build_object(\n        'day_of_week', s.day_of_week,\n        'time_start',  s.time_start::text,\n        'time_end',    s.time_end::text\n      )\n    ) FILTER (WHERE s.id IS NOT NULL),\n    '[]'::json\n  ) AS schedules\nFROM   menu_items mi\nJOIN   categories c  ON c.id = mi.category_id\nLEFT JOIN item_schedules s ON s.item_id = mi.id\nWHERE  mi.restaurant_id = $1\n  AND  mi.available = true\n  AND  c.active     = true\nGROUP BY mi.id, mi.name, mi.description, mi.price,\n         mi.chef_recommendation, mi.chef_note,\n         c.name, c.sort_order\nORDER BY c.sort_order, mi.name",
+        "additionalFields": {
+          "queryParams": "={{ [$('Extract and Validate').first().json.restaurantId] }}"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0007-0007-0007-a1b2c3d40007",
+      "name": "Fetch Active Menu (SQL)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1600, 300],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_POSTGRES_CREDENTIAL_ID",
+          "name": "PickyMenu Supabase Postgres"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "jsCode": "const timezone = $('Verify Signature').first().json.timezone;\nconst items    = $('Fetch Active Menu (SQL)').all().map(i => i.json);\n\n// Resolve current time in the restaurant's timezone\nconst now = new Date();\nconst fmt = new Intl.DateTimeFormat('en-US', {\n  timeZone: timezone,\n  weekday: 'short',\n  hour:    '2-digit',\n  minute:  '2-digit',\n  hour12:  false,\n});\n\nconst parts     = Object.fromEntries(fmt.formatToParts(now).map(p => [p.type, p.value]));\nconst DOW_MAP   = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };\nconst dayOfWeek = DOW_MAP[parts.weekday];\nconst localTime = `${parts.hour.padStart(2, '0')}:${parts.minute}`;\n\nconst available = items.filter(item => {\n  const schedules = typeof item.schedules === 'string'\n    ? JSON.parse(item.schedules)\n    : (item.schedules ?? []);\n\n  if (schedules.length === 0) return true; // no schedule = always available\n\n  return schedules.some(s => {\n    const dayOk  = s.day_of_week.length === 0 || s.day_of_week.includes(dayOfWeek);\n    const timeOk = localTime >= s.time_start && localTime <= s.time_end;\n    return dayOk && timeOk;\n  });\n});\n\nconst dateStr = now.toLocaleDateString('en-US', {\n  timeZone: timezone,\n  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',\n});\n\nreturn [{ json: { items: available, localTime, weekdayName: parts.weekday, timezone, dateStr } }];"
+      },
+      "id": "a1b2c3d4-0008-0008-0008-a1b2c3d40008",
+      "name": "Filter by Day and Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1880, 300]
+    },
+
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/conversations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "restaurant_id",
+              "value": "=eq.{{ $('Extract and Validate').first().json.restaurantId }}"
+            },
+            {
+              "name": "whatsapp_number",
+              "value": "=eq.{{ $('Extract and Validate').first().json.whatsappNumber }}"
+            },
+            {
+              "name": "last_message_at",
+              "value": "=gt.{{ new Date(Date.now() - 86400000).toISOString() }}"
+            },
+            {
+              "name": "order",
+              "value": "last_message_at.desc"
+            },
+            {
+              "name": "limit",
+              "value": "1"
+            },
+            {
+              "name": "select",
+              "value": "id"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0009-0009-0009-a1b2c3d40009",
+      "name": "Find Conversation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2160, 300]
+    },
+
+    {
+      "parameters": {
+        "jsCode": "// Supabase REST returns an array; empty = no conversation in the 24h window\nconst response    = $('Find Conversation').first().json;\nconst foundConvs  = Array.isArray(response) ? response : [];\nconst existing    = foundConvs[0];\n\nconst restaurantId   = $('Extract and Validate').first().json.restaurantId;\nconst whatsappNumber = $('Extract and Validate').first().json.whatsappNumber;\nconst supabaseUrl    = $env.SUPABASE_URL;\nconst supabaseKey    = $env.SUPABASE_SERVICE_ROLE_KEY;\nconst now            = new Date().toISOString();\n\nconst headers = {\n  'apikey':        supabaseKey,\n  'Authorization': `Bearer ${supabaseKey}`,\n  'Content-Type':  'application/json',\n  'Prefer':        'return=representation',\n};\n\nlet conversationId;\n\nif (existing?.id) {\n  // Update last_message_at on existing conversation\n  const result = await this.helpers.httpRequest({\n    method:  'PATCH',\n    url:     `${supabaseUrl}/rest/v1/conversations?id=eq.${existing.id}`,\n    headers,\n    body:    JSON.stringify({ last_message_at: now }),\n    json:    false,\n  });\n  const rows = JSON.parse(result);\n  conversationId = rows[0].id;\n} else {\n  // Create a new conversation\n  const result = await this.helpers.httpRequest({\n    method:  'POST',\n    url:     `${supabaseUrl}/rest/v1/conversations`,\n    headers,\n    body:    JSON.stringify({\n      restaurant_id:    restaurantId,\n      whatsapp_number:  whatsappNumber,\n      started_at:       now,\n      last_message_at:  now,\n    }),\n    json: false,\n  });\n  const rows = JSON.parse(result);\n  conversationId = rows[0].id;\n}\n\nreturn [{ json: { conversationId } }];"
+      },
+      "id": "a1b2c3d4-0010-0010-0010-a1b2c3d40010",
+      "name": "Upsert Conversation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2440, 300]
+    },
+
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"conversation_id\": \"{{ $('Upsert Conversation').first().json.conversationId }}\",\n  \"role\": \"user\",\n  \"content\": {{ JSON.stringify($('Extract and Validate').first().json.messageText) }}\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0011-0011-0011-a1b2c3d40011",
+      "name": "Save User Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2720, 300]
+    },
+
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "conversation_id",
+              "value": "=eq.{{ $('Upsert Conversation').first().json.conversationId }}"
+            },
+            {
+              "name": "order",
+              "value": "created_at.desc"
+            },
+            {
+              "name": "limit",
+              "value": "10"
+            },
+            {
+              "name": "select",
+              "value": "role,content,created_at"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0012-0012-0012-a1b2c3d40012",
+      "name": "Fetch History",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [3000, 300]
+    },
+
+    {
+      "parameters": {
+        "jsCode": "const restaurantName = $('Verify Signature').first().json.restaurantName;\nconst filtered       = $('Filter by Day and Time').first().json;\nconst userMsg        = $('Extract and Validate').first().json.messageText;\n\n// History from Supabase is an array in $json (newest first) — reverse to chronological\nconst rawHistory = $('Fetch History').first().json;\nconst historyArr = (Array.isArray(rawHistory) ? rawHistory : []).reverse();\n// Exclude the user message we just inserted (last item is the one we saved)\nconst history = historyArr.slice(0, -1);\n\n// Group available items by category for the menu JSON\nconst byCategory = {};\nfor (const item of filtered.items) {\n  if (!byCategory[item.category]) byCategory[item.category] = [];\n  byCategory[item.category].push({\n    name:        item.name,\n    description: item.description ?? null,\n    price:       item.price ?? null,\n    chef_pick:   item.chef_recommendation,\n    chef_note:   item.chef_note ?? null,\n  });\n}\n\nconst menuJson = JSON.stringify(byCategory, null, 2);\n\nconst systemPrompt =\n`You are a friendly restaurant assistant for ${restaurantName}.\nYour only job is to help diners explore the menu and make recommendations.\nYou do NOT take orders.\nAlways respond in the same language the diner is using.\nSupported languages: English, Spanish, German, French, Italian.\n\nToday is ${filtered.dateStr}. Current time: ${filtered.localTime} (${filtered.timezone}).\n\nAvailable menu (JSON — grouped by category):\n${menuJson}\n\nItems marked chef_pick: true are chef recommendations — highlight them with ⭐.\nOnly recommend items listed above; unavailable items have already been filtered out.\nKeep responses warm, concise, and helpful.`;\n\n// Build messages array for the Anthropic API\nconst messages = [\n  ...history.map(m => ({ role: m.role, content: m.content })),\n  { role: 'user', content: userMsg },\n];\n\nreturn [{ json: { systemPrompt, messages } }];"
+      },
+      "id": "a1b2c3d4-0013-0013-0013-a1b2c3d40013",
+      "name": "Build System Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3280, 300]
+    },
+
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-3-5-sonnet-20241022\",\n  \"max_tokens\": 1024,\n  \"system\": {{ JSON.stringify($('Build System Prompt').first().json.systemPrompt) }},\n  \"messages\": {{ JSON.stringify($('Build System Prompt').first().json.messages) }}\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0014-0014-0014-a1b2c3d40014",
+      "name": "Call Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [3560, 300]
+    },
+
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"conversation_id\": \"{{ $('Upsert Conversation').first().json.conversationId }}\",\n  \"role\": \"assistant\",\n  \"content\": {{ JSON.stringify($json.content[0].text) }}\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0015-0015-0015-a1b2c3d40015",
+      "name": "Save Assistant Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [3840, 300]
+    },
+
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"reply\": {{ JSON.stringify($('Call Claude').first().json.content[0].text) }}\n}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "a1b2c3d4-0016-0016-0016-a1b2c3d40016",
+      "name": "Respond to Kapso",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [4120, 300]
+    }
+  ],
+
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          { "node": "Extract and Validate", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Extract and Validate": {
+      "main": [
+        [
+          { "node": "IF: Skip?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "IF: Skip?": {
+      "main": [
+        [
+          { "node": "Respond — Silent Ignore", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Fetch Restaurant", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Restaurant": {
+      "main": [
+        [
+          { "node": "Verify Signature", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Verify Signature": {
+      "main": [
+        [
+          { "node": "Fetch Active Menu (SQL)", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Active Menu (SQL)": {
+      "main": [
+        [
+          { "node": "Filter by Day and Time", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Filter by Day and Time": {
+      "main": [
+        [
+          { "node": "Find Conversation", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Find Conversation": {
+      "main": [
+        [
+          { "node": "Upsert Conversation", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Upsert Conversation": {
+      "main": [
+        [
+          { "node": "Save User Message", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Save User Message": {
+      "main": [
+        [
+          { "node": "Fetch History", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch History": {
+      "main": [
+        [
+          { "node": "Build System Prompt", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Build System Prompt": {
+      "main": [
+        [
+          { "node": "Call Claude", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Call Claude": {
+      "main": [
+        [
+          { "node": "Save Assistant Message", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Save Assistant Message": {
+      "main": [
+        [
+          { "node": "Respond to Kapso", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "versionId": "a1b2c3d4-ffff-ffff-ffff-a1b2c3d4ffff",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": ""
+  },
+  "id": "pickymenu-chatbot-v1",
+  "tags": [
+    { "name": "pickymenu" },
+    { "name": "whatsapp" },
+    { "name": "chatbot" }
+  ]
+}
