@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, Clock, Trash2, Loader2, Search, UtensilsCrossed } from 'lucide-react'
 import { Header } from '@/components/layout/Header'
 import { Dialog } from '@/components/ui/dialog'
@@ -18,26 +18,30 @@ import {
   useUpdateMenuItem,
   useDeleteMenuItem,
   useToggleAvailability,
+  useItemPairings,
+  useSyncPairings,
 } from '@/hooks/useMenu'
 import { useCategories } from '@/hooks/useCategories'
-import type { MenuItemWithSchedules, ItemSchedule } from '@/types/database'
+import type { MenuItem, MenuItemWithSchedules, ItemSchedule } from '@/types/database'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const DAY_NAMES  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-// ─── Schedule types ───────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ScheduleDraft {
-  /** undefined = newly added (no DB row yet); string = existing row id */
   id?: string
   day_of_week: number[]
   time_start: string
   time_end: string
 }
 
-// ─── Item form state ──────────────────────────────────────────────────────────
+interface PairingDraft {
+  paired_item_id: string
+  pairing_note: string
+}
 
 interface ItemFormState {
   name: string
@@ -59,7 +63,7 @@ const defaultForm: ItemFormState = {
   chef_note: '',
 }
 
-// ─── Schedule row ─────────────────────────────────────────────────────────────
+// ─── ScheduleRow ──────────────────────────────────────────────────────────────
 
 interface ScheduleRowProps {
   schedule: ScheduleDraft
@@ -77,7 +81,6 @@ function ScheduleRow({ schedule, onChange, onRemove }: ScheduleRowProps) {
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3">
-      {/* Day toggles */}
       <div className="flex items-center gap-1">
         <span className="text-xs text-muted-foreground w-14 shrink-0">Days</span>
         <div className="flex gap-1 flex-wrap">
@@ -104,7 +107,6 @@ function ScheduleRow({ schedule, onChange, onRemove }: ScheduleRowProps) {
         </div>
       </div>
 
-      {/* Time range + delete */}
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted-foreground w-14 shrink-0">Hours</span>
         <Input
@@ -126,7 +128,6 @@ function ScheduleRow({ schedule, onChange, onRemove }: ScheduleRowProps) {
           size="icon"
           className="h-7 w-7 ml-auto text-destructive hover:text-destructive"
           onClick={onRemove}
-          title="Remove schedule"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </Button>
@@ -135,13 +136,68 @@ function ScheduleRow({ schedule, onChange, onRemove }: ScheduleRowProps) {
   )
 }
 
-// ─── Item form dialog ─────────────────────────────────────────────────────────
+// ─── PairingRow ───────────────────────────────────────────────────────────────
+
+interface PairingRowProps {
+  item: MenuItem
+  categoryName: string
+  selected: boolean
+  note: string
+  onToggle: () => void
+  onNoteChange: (note: string) => void
+}
+
+function PairingRow({ item, categoryName, selected, note, onToggle, onNoteChange }: PairingRowProps) {
+  return (
+    <div
+      className={`rounded-lg border transition-colors ${
+        selected ? 'border-primary/50 bg-primary/5' : 'border-input bg-background'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
+      >
+        <span
+          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold transition-colors ${
+            selected
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'border-input bg-background'
+          }`}
+        >
+          {selected && '✓'}
+        </span>
+        <span className="flex-1 text-sm font-medium">{item.name}</span>
+        {categoryName && (
+          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+            {categoryName}
+          </span>
+        )}
+      </button>
+
+      {selected && (
+        <div className="border-t border-primary/20 px-3 pb-2.5 pt-2">
+          <Input
+            placeholder="Pairing note (optional)…"
+            value={note}
+            onChange={(e) => onNoteChange(e.target.value)}
+            className="h-7 text-xs"
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── ItemFormDialog ───────────────────────────────────────────────────────────
 
 interface ItemFormDialogProps {
   open: boolean
   onClose: () => void
   editingItem: MenuItemWithSchedules | null
   categories: Array<{ id: string; name: string }>
+  allItems: MenuItem[]
   restaurantId: string
   isAdmin: boolean
   isStaff: boolean
@@ -153,17 +209,16 @@ function ItemFormDialog({
   onClose,
   editingItem,
   categories,
+  allItems,
   restaurantId,
   isAdmin,
   isStaff,
   onSaved,
 }: ItemFormDialogProps) {
-  const createItem = useCreateMenuItem()
-  const updateItem = useUpdateMenuItem()
+  const createItem    = useCreateMenuItem()
+  const updateItem    = useUpdateMenuItem()
+  const syncPairings  = useSyncPairings()
 
-  // State is seeded from editingItem at mount time.
-  // The parent passes a key={editingItem?.id ?? 'new'} so this component
-  // remounts (and re-initialises) every time a different item is opened.
   const [form, setForm] = useState<ItemFormState>(() =>
     editingItem
       ? {
@@ -177,8 +232,8 @@ function ItemFormDialog({
         }
       : defaultForm
   )
-  const [imageFile, setImageFile] = useState<File | undefined>(undefined)
-  const [schedules, setSchedules] = useState<ScheduleDraft[]>(() =>
+  const [imageFile,  setImageFile]  = useState<File | undefined>(undefined)
+  const [schedules,  setSchedules]  = useState<ScheduleDraft[]>(() =>
     editingItem
       ? editingItem.item_schedules.map((s: ItemSchedule) => ({
           id:          s.id,
@@ -188,6 +243,46 @@ function ItemFormDialog({
         }))
       : []
   )
+  const [pairings,   setPairings]   = useState<PairingDraft[]>([])
+  const [pairSearch, setPairSearch] = useState('')
+
+  const { data: existingPairings } = useItemPairings(editingItem?.id)
+
+  useEffect(() => {
+    if (existingPairings) {
+      setPairings(
+        existingPairings.map((p) => ({
+          paired_item_id: p.paired_item_id,
+          pairing_note:   p.pairing_note ?? '',
+        }))
+      )
+    }
+  }, [existingPairings])
+
+  const categoryMap = Object.fromEntries(categories.map((c) => [c.id, c.name]))
+
+  const otherItems = allItems
+    .filter((i) => i.id !== editingItem?.id)
+    .filter((i) =>
+      pairSearch.trim() === '' ||
+      i.name.toLowerCase().includes(pairSearch.toLowerCase()) ||
+      categoryMap[i.category_id ?? '']?.toLowerCase().includes(pairSearch.toLowerCase())
+    )
+
+  const togglePairing = (itemId: string) => {
+    setPairings((prev) => {
+      const exists = prev.find((p) => p.paired_item_id === itemId)
+      return exists
+        ? prev.filter((p) => p.paired_item_id !== itemId)
+        : [...prev, { paired_item_id: itemId, pairing_note: '' }]
+    })
+  }
+
+  const updatePairingNote = (itemId: string, note: string) => {
+    setPairings((prev) =>
+      prev.map((p) => (p.paired_item_id === itemId ? { ...p, pairing_note: note } : p))
+    )
+  }
 
   const addSchedule = () => {
     setSchedules((prev) => [
@@ -196,30 +291,27 @@ function ItemFormDialog({
     ])
   }
 
-  const isSaving = createItem.isPending || updateItem.isPending
+  const isSaving = createItem.isPending || updateItem.isPending || syncPairings.isPending
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     const values = {
-      name:               form.name,
-      description:        form.description || null,
-      price:              form.price ? parseFloat(form.price) : null,
-      category_id:        form.category_id || null,
-      available:          form.available,
+      name:                form.name,
+      description:         form.description || null,
+      price:               form.price ? parseFloat(form.price) : null,
+      category_id:         form.category_id || null,
+      available:           form.available,
       chef_recommendation: form.chef_recommendation,
-      chef_note:          form.chef_note || null,
-      image_url:          editingItem?.image_url ?? null,
+      chef_note:           form.chef_note || null,
+      image_url:           editingItem?.image_url ?? null,
     }
 
     if (editingItem) {
-      // Determine which existing schedules were removed
-      const originalIds = editingItem.item_schedules.map((s: ItemSchedule) => s.id)
-      const keptIds = schedules.filter((s) => s.id).map((s) => s.id as string)
+      const originalIds        = editingItem.item_schedules.map((s: ItemSchedule) => s.id)
+      const keptIds            = schedules.filter((s) => s.id).map((s) => s.id as string)
       const scheduleIdsToDelete = originalIds.filter((id) => !keptIds.includes(id))
-
-      // New schedules = those without an id
-      const schedulesToAdd = schedules
+      const schedulesToAdd     = schedules
         .filter((s) => !s.id)
         .map((s) => ({ day_of_week: s.day_of_week, time_start: s.time_start, time_end: s.time_end }))
 
@@ -231,8 +323,12 @@ function ItemFormDialog({
         scheduleIdsToDelete,
         schedulesToAdd,
       })
+
+      if (isAdmin) {
+        await syncPairings.mutateAsync({ itemId: editingItem.id, pairings })
+      }
     } else {
-      await createItem.mutateAsync({
+      const newItem = await createItem.mutateAsync({
         restaurantId,
         values,
         imageFile,
@@ -242,6 +338,10 @@ function ItemFormDialog({
           time_end:    s.time_end,
         })),
       })
+
+      if (isAdmin && pairings.length > 0 && newItem) {
+        await syncPairings.mutateAsync({ itemId: newItem.id, pairings })
+      }
     }
 
     onSaved()
@@ -346,6 +446,73 @@ function ItemFormDialog({
           )}
         </div>
 
+        {/* ── Pairings ──────────────────────────────────────────────────────── */}
+        {isAdmin && allItems.length > 1 && (
+          <div className="space-y-2 border-t pt-4">
+            <div>
+              <p className="text-sm font-medium">Pairings</p>
+              <p className="text-xs text-muted-foreground">
+                Suggest items that pair well together. The AI will use this to make recommendations.
+              </p>
+            </div>
+
+            {pairings.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pb-1">
+                {pairings.map((p) => {
+                  const paired = allItems.find((i) => i.id === p.paired_item_id)
+                  return paired ? (
+                    <Badge
+                      key={p.paired_item_id}
+                      variant="secondary"
+                      className="gap-1 pr-1 text-xs"
+                    >
+                      {paired.name}
+                      <button
+                        type="button"
+                        onClick={() => togglePairing(p.paired_item_id)}
+                        className="ml-0.5 rounded-full hover:bg-muted-foreground/20 px-0.5"
+                      >
+                        ×
+                      </button>
+                    </Badge>
+                  ) : null
+                })}
+              </div>
+            )}
+
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search items to pair…"
+                value={pairSearch}
+                onChange={(e) => setPairSearch(e.target.value)}
+                className="pl-8 h-8 text-sm"
+              />
+            </div>
+
+            <div className="max-h-52 overflow-y-auto space-y-1.5 pr-0.5">
+              {otherItems.length === 0 ? (
+                <p className="py-4 text-center text-xs text-muted-foreground">No items found</p>
+              ) : (
+                otherItems.map((item) => {
+                  const pairing = pairings.find((p) => p.paired_item_id === item.id)
+                  return (
+                    <PairingRow
+                      key={item.id}
+                      item={item}
+                      categoryName={categoryMap[item.category_id ?? ''] ?? ''}
+                      selected={!!pairing}
+                      note={pairing?.pairing_note ?? ''}
+                      onToggle={() => togglePairing(item.id)}
+                      onNoteChange={(note) => updatePairingNote(item.id, note)}
+                    />
+                  )
+                })
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ── Schedules ─────────────────────────────────────────────────────── */}
         {isAdmin && (
           <div className="space-y-2 border-t pt-4">
@@ -405,25 +572,17 @@ export function MenuItems() {
   const isStaff = profile?.role === 'staff'
 
   const { data: items = [], isLoading } = useMenuItems(restaurantId)
-  const { data: categories = [] } = useCategories(restaurantId)
-  const deleteItem = useDeleteMenuItem(restaurantId)
+  const { data: categories = [] }       = useCategories(restaurantId)
+  const deleteItem         = useDeleteMenuItem(restaurantId)
   const toggleAvailability = useToggleAvailability(restaurantId)
 
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingItem, setEditingItem] = useState<MenuItemWithSchedules | null>(null)
-  const [search, setSearch] = useState('')
+  const [dialogOpen,   setDialogOpen]   = useState(false)
+  const [editingItem,  setEditingItem]  = useState<MenuItemWithSchedules | null>(null)
+  const [search,       setSearch]       = useState('')
   const [filterCategoryId, setFilterCategoryId] = useState('')
 
-  const openCreate = () => {
-    setEditingItem(null)
-    setDialogOpen(true)
-  }
-
-  const openEdit = (item: MenuItemWithSchedules) => {
-    setEditingItem(item)
-    setDialogOpen(true)
-  }
-
+  const openCreate = () => { setEditingItem(null); setDialogOpen(true) }
+  const openEdit   = (item: MenuItemWithSchedules) => { setEditingItem(item); setDialogOpen(true) }
   const closeDialog = () => setDialogOpen(false)
 
   const handleDelete = async (item: MenuItemWithSchedules) => {
@@ -431,10 +590,9 @@ export function MenuItems() {
     await deleteItem.mutateAsync({ id: item.id, hasImage: !!item.image_url })
   }
 
-  // Filtering
   const filteredItems = items.filter((i) => {
     const matchesSearch = i.name.toLowerCase().includes(search.toLowerCase())
-    const matchesCat = !filterCategoryId || i.category_id === filterCategoryId
+    const matchesCat    = !filterCategoryId || i.category_id === filterCategoryId
     return matchesSearch && matchesCat
   })
 
@@ -492,7 +650,7 @@ export function MenuItems() {
           )}
         </div>
 
-        {/* Category filter pills (quick-jump) */}
+        {/* Category pills */}
         {!filterCategoryId && !search && categories.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {categories.map((cat) => {
@@ -559,13 +717,14 @@ export function MenuItems() {
         )}
       </div>
 
-      {/* Dialog form — keyed so it remounts (and resets state) for each distinct item */}
+      {/* Dialog — keyed so it remounts for each distinct item */}
       <ItemFormDialog
         key={dialogOpen ? (editingItem?.id ?? 'new') : 'closed'}
         open={dialogOpen}
         onClose={closeDialog}
         editingItem={editingItem}
         categories={categories}
+        allItems={items}
         restaurantId={restaurantId}
         isAdmin={isAdmin}
         isStaff={isStaff}

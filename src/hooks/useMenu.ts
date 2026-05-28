@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { uploadMenuImage, deleteMenuImage } from '@/lib/storage'
-import type { MenuItem, MenuItemWithSchedules, ItemSchedule } from '@/types/database'
+import type { MenuItem, MenuItemWithSchedules, ItemSchedule, ItemPairing } from '@/types/database'
 
 // ─── Menu Items ───────────────────────────────────────────────────────────────
 
@@ -178,6 +178,60 @@ export function useToggleAvailability(restaurantId: string) {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['menu_items', restaurantId] })
+    },
+  })
+}
+
+// ─── Item Pairings ────────────────────────────────────────────────────────────
+
+export function useItemPairings(itemId: string | undefined) {
+  return useQuery({
+    queryKey: ['item_pairings', itemId],
+    queryFn: async () => {
+      if (!itemId) return [] as ItemPairing[]
+      const { data, error } = await supabase
+        .from('item_pairings')
+        .select('id, item_id, paired_item_id, pairing_note')
+        .eq('item_id', itemId)
+      if (error) throw error
+      return data as ItemPairing[]
+    },
+    enabled: !!itemId,
+  })
+}
+
+export function useSyncPairings() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      itemId,
+      pairings,
+    }: {
+      itemId: string
+      pairings: Array<{ paired_item_id: string; pairing_note: string }>
+    }) => {
+      const { error: delError } = await supabase
+        .from('item_pairings')
+        .delete()
+        .eq('item_id', itemId)
+      if (delError) throw delError
+
+      if (pairings.length > 0) {
+        const { error: insError } = await supabase
+          .from('item_pairings')
+          .insert(
+            pairings.map((p) => ({
+              item_id: itemId,
+              paired_item_id: p.paired_item_id,
+              pairing_note: p.pairing_note || null,
+            }))
+          )
+        if (insError) throw insError
+      }
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['item_pairings', variables.itemId] })
     },
   })
 }
