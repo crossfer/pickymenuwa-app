@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Loader2, Copy, Check, Eye, EyeOff } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { Header } from '@/components/layout/Header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,7 +8,6 @@ import { Select } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase'
-import type { Restaurant } from '@/types/database'
 
 const TIMEZONES = [
   'America/New_York',
@@ -34,7 +33,6 @@ export function Settings() {
   const isAdmin      = profile?.role === 'admin' || profile?.role === 'superadmin'
 
   // ── Restaurant data ──────────────────────────────────────────────────────────
-  const [restaurant, setRestaurant]   = useState<Restaurant | null>(null)
   const [loading, setLoading]         = useState(true)
 
   // ── Restaurant info form ─────────────────────────────────────────────────────
@@ -42,11 +40,12 @@ export function Settings() {
   const [timezone, setTimezone]       = useState('America/Los_Angeles')
   const [saving, setSaving]           = useState(false)
 
-  // ── Copy webhook URL ─────────────────────────────────────────────────────────
-  const [copied, setCopied]           = useState(false)
-
-  // ── Secret visibility toggle (read-only reference) ───────────────────────────
-  const [showSecret, setShowSecret]   = useState(false)
+  // ── Change password form ─────────────────────────────────────────────────────
+  const [newPassword, setNewPassword]         = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [pwSaving, setPwSaving]               = useState(false)
+  const [pwError, setPwError]                 = useState<string | null>(null)
+  const [pwSuccess, setPwSuccess]             = useState(false)
 
   // ── Load ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -59,7 +58,6 @@ export function Settings() {
       .single()
       .then(({ data }) => {
         if (data) {
-          setRestaurant(data)
           setName(data.name)
           setTimezone(data.timezone)
         }
@@ -68,16 +66,6 @@ export function Settings() {
   }, [restaurantId])
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
-
-  const webhookUrl = restaurant
-    ? `https://{n8n-instance}/webhook/${restaurant.slug}`
-    : ''
-
-  const handleCopyWebhook = async () => {
-    await navigator.clipboard.writeText(webhookUrl)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -88,6 +76,33 @@ export function Settings() {
       .update({ name, timezone })
       .eq('id', restaurantId)
     setSaving(false)
+  }
+
+  const handlePasswordUpdate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setPwError(null)
+    setPwSuccess(false)
+
+    if (newPassword.length < 8) {
+      setPwError('Password must be at least 8 characters.')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setPwError('Passwords do not match.')
+      return
+    }
+
+    setPwSaving(true)
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    setPwSaving(false)
+
+    if (error) {
+      setPwError(error.message)
+    } else {
+      setPwSuccess(true)
+      setNewPassword('')
+      setConfirmPassword('')
+    }
   }
 
   // ── Loading state ─────────────────────────────────────────────────────────────
@@ -153,88 +168,50 @@ export function Settings() {
           </CardContent>
         </Card>
 
-        {/* ── Kapso webhook URL (read-only display) ────────────────────────── */}
+        {/* ── Change password ──────────────────────────────────────────────── */}
         <Card>
           <CardHeader>
-            <CardTitle>Kapso webhook URL</CardTitle>
-            <CardDescription>
-              Paste this URL into your Kapso.ai account to connect WhatsApp.
-            </CardDescription>
+            <CardTitle>Change password</CardTitle>
+            <CardDescription>Update your account password.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex gap-2">
-              <Input value={webhookUrl} readOnly className="font-mono text-xs" />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={handleCopyWebhook}
-              >
-                {copied
-                  ? <Check className="h-4 w-4 text-emerald-500" />
-                  : <Copy  className="h-4 w-4" />
-                }
-              </Button>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Replace <code className="font-mono">{'{n8n-instance}'}</code> with your actual n8n host.
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* ── WhatsApp integration (read-only reference) ───────────────────── */}
-        <Card>
-          <CardHeader>
-            <CardTitle>WhatsApp integration</CardTitle>
-            <CardDescription>
-              Kapso.ai credentials configured for this restaurant.
-              These values are managed by your PickyMenu administrator in the
-              Superadmin → Restaurants section.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-
-            {/* Kapso Phone Number ID */}
-            <div className="space-y-1.5">
-              <Label htmlFor="kapso-phone-id">Kapso Phone Number ID</Label>
-              <Input
-                id="kapso-phone-id"
-                value={restaurant?.kapso_phone_number_id ?? ''}
-                readOnly
-                placeholder="Not configured"
-                className="font-mono text-sm text-muted-foreground"
-              />
-            </div>
-
-            {/* Kapso Webhook Secret */}
-            <div className="space-y-1.5">
-              <Label htmlFor="kapso-secret">Kapso Webhook Secret</Label>
-              <div className="relative">
+            <form onSubmit={handlePasswordUpdate} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="new-password">New password</Label>
                 <Input
-                  id="kapso-secret"
-                  type={showSecret ? 'text' : 'password'}
-                  value={restaurant?.kapso_webhook_secret ?? ''}
-                  readOnly
-                  placeholder="Not configured"
-                  className="font-mono text-sm text-muted-foreground pr-10"
+                  id="new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
+                  required
                 />
-                {restaurant?.kapso_webhook_secret && (
-                  <button
-                    type="button"
-                    onClick={() => setShowSecret((v) => !v)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                    tabIndex={-1}
-                    aria-label={showSecret ? 'Hide secret' : 'Show secret'}
-                  >
-                    {showSecret
-                      ? <EyeOff className="h-4 w-4" />
-                      : <Eye    className="h-4 w-4" />
-                    }
-                  </button>
-                )}
               </div>
-            </div>
 
+              <div className="space-y-1.5">
+                <Label htmlFor="confirm-password">Confirm password</Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
+                  required
+                />
+              </div>
+
+              {pwError && (
+                <p className="text-sm text-destructive">{pwError}</p>
+              )}
+              {pwSuccess && (
+                <p className="text-sm text-emerald-500">Password updated successfully.</p>
+              )}
+
+              <Button type="submit" disabled={pwSaving}>
+                {pwSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Update password
+              </Button>
+            </form>
           </CardContent>
         </Card>
 
