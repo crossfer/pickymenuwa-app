@@ -53,7 +53,7 @@ export function Sidebar({ profile }: SidebarProps) {
     <aside className="flex h-screen w-60 flex-col border-r bg-sidebar text-sidebar-foreground">
       {/* Logo */}
       <div className="flex h-14 items-center border-b border-sidebar-border px-4">
-        <img src={logo} alt="PickyMenu" className="h-8 w-auto" />
+        <img src={logo} alt="PickyMenu" className="h-16 w-auto" />
       </div>
 
       {/* Navigation */}
