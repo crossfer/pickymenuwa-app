@@ -7,6 +7,7 @@ import { PageShell } from '@/components/layout/PageShell'
 
 import { Login } from '@/pages/auth/Login'
 import { ForgotPassword } from '@/pages/auth/ForgotPassword'
+import { ChatWidget } from '@/pages/chat/ChatWidget'
 import { Overview } from '@/pages/dashboard/Overview'
 import { Categories } from '@/pages/dashboard/Categories'
 import { MenuItems } from '@/pages/dashboard/MenuItems'
@@ -86,6 +87,7 @@ function AppRoutes() {
       {/* ── Public ── */}
       <Route path="/login"          element={<Login />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/chat/:slug"     element={<ChatWidget />} />
 
       {/* ── Dashboard: admin + staff ── */}
       <Route

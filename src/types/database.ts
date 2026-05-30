@@ -20,6 +20,7 @@ export type Database = {
           kapso_webhook_secret: string | null
           kapso_phone_number_id: string | null
           timezone: string
+          webchat_webhook_url: string | null
           created_at: string
         }
         Insert: {
@@ -29,6 +30,7 @@ export type Database = {
           kapso_webhook_secret?: string | null
           kapso_phone_number_id?: string | null
           timezone?: string
+          webchat_webhook_url?: string | null
           created_at?: string
         }
         Update: {
@@ -38,6 +40,7 @@ export type Database = {
           kapso_webhook_secret?: string | null
           kapso_phone_number_id?: string | null
           timezone?: string
+          webchat_webhook_url?: string | null
           created_at?: string
         }
         Relationships: []
