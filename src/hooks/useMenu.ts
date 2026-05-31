@@ -173,20 +173,11 @@ export function useToggleAvailability(restaurantId: string) {
         .from('menu_items')
         .update({ available, updated_at: new Date().toISOString() })
         .eq('id', id)
+
       if (error) throw error
     },
-    onMutate: async ({ id, available }) => {
-      await queryClient.cancelQueries({ queryKey: ['menu_items', restaurantId] })
-      const previous = queryClient.getQueryData(['menu_items', restaurantId])
-      queryClient.setQueryData(['menu_items', restaurantId], (old: MenuItemWithSchedules[]) =>
-        old.map((item) => item.id === id ? { ...item, available } : item)
-      )
-      return { previous }
-    },
-    onError: (_err, _vars, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(['menu_items', restaurantId], context.previous)
-      }
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['menu_items', restaurantId] })
     },
   })
 }

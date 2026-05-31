@@ -6,20 +6,16 @@ interface SwitchProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
-  ({ className, onCheckedChange, onChange, checked, id, ...props }, ref) => {
-    const generatedId = React.useId()
-    const switchId = id ?? generatedId
-
+  ({ className, onCheckedChange, onChange, checked, ...props }, ref) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       onChange?.(e)
       onCheckedChange?.(e.target.checked)
     }
 
     return (
-      <label htmlFor={switchId} className="relative inline-flex cursor-pointer items-center">
+      <label className="relative inline-flex cursor-pointer items-center">
         <input
           type="checkbox"
-          id={switchId}
           ref={ref}
           className="sr-only peer"
           checked={checked}
