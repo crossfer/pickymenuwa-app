@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuth, useRestaurantId } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase'
 
 const TIMEZONES = [
@@ -29,7 +29,7 @@ const TIMEZONES = [
 
 export function Settings() {
   const { profile } = useAuth()
-  const restaurantId = profile?.restaurant_id ?? ''
+  const restaurantId = useRestaurantId()
   const isAdmin      = profile?.role === 'admin' || profile?.role === 'superadmin'
 
   // ── Restaurant data ──────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Navigate, Link } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { ChefHat, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,8 +27,10 @@ export function Login() {
   // AuthContext guarantees that setProfile() runs before setLoading(false), so
   // `profile` is already set here and roleDestination() returns the right path.
   // No window.location / hard reload — just a React Router <Navigate>.
-  if (!loading && user) {
-    return <Navigate to={roleDestination(profile)} replace />
+  if (!loading && user && profile) {
+    const dest = roleDestination(profile)
+    window.location.href = dest
+    return null
   }
 
   // ── Submit ─────────────────────────────────────────────────────────────────

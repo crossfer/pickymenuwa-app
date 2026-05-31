@@ -47,6 +47,9 @@ interface AuthContextValue {
   profile: Profile | null
   loading: boolean
   refreshProfile: () => Promise<void>
+  impersonatedRestaurantId: string | null
+  impersonatedRestaurantName: string | null
+  setImpersonation: (id: string | null, name: string | null) => void
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -71,6 +74,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+
+  const [impersonatedRestaurantId,   setImpersonatedRestaurantId]   = useState<string | null>(null)
+  const [impersonatedRestaurantName, setImpersonatedRestaurantName] = useState<string | null>(null)
+
+  const setImpersonation = useCallback((id: string | null, name: string | null) => {
+    setImpersonatedRestaurantId(id)
+    setImpersonatedRestaurantName(name)
+  }, [])
 
   // One-shot gate: cleared after the first auth event resolves.
   // Ref (not state) so it survives StrictMode double-invoke without resetting.
@@ -240,8 +251,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // even when nothing auth-related changed — which was amplifying the
   // Categories infinite-loop bug to every dashboard page.
   const contextValue = useMemo(
-    () => ({ user, session, profile, loading, refreshProfile }),
-    [user, session, profile, loading, refreshProfile],
+    () => ({
+      user, session, profile, loading, refreshProfile,
+      impersonatedRestaurantId, impersonatedRestaurantName, setImpersonation,
+    }),
+    [user, session, profile, loading, refreshProfile,
+     impersonatedRestaurantId, impersonatedRestaurantName, setImpersonation],
   )
 
   return (

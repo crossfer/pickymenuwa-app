@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuth, useRestaurantId } from '@/hooks/useAuth'
 import {
   useCategories,
   useCreateCategory,
@@ -162,7 +162,7 @@ const EMPTY_CATS: Category[] = []
 
 export function Categories() {
   const { profile } = useAuth()
-  const restaurantId = profile?.restaurant_id ?? ''
+  const restaurantId = useRestaurantId()
   const isAdmin = profile?.role === 'admin' || profile?.role === 'superadmin'
 
   const { data: categories = EMPTY_CATS, isLoading } = useCategories(restaurantId)

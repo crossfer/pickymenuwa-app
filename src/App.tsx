@@ -57,6 +57,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 /**
  * After auth is confirmed, check that the user's role is in `allowed`.
  * If not → redirect to the appropriate home for their actual role.
+ * Exception: superadmin can always access /dashboard routes while impersonating.
  */
 function RoleGuard({
   allowed,
@@ -65,10 +66,14 @@ function RoleGuard({
   allowed: Array<'superadmin' | 'admin' | 'staff'>
   children: React.ReactNode
 }) {
-  const { profile, loading } = useAuth()
+  const { profile, loading, impersonatedRestaurantId } = useAuth()
 
-  // Still fetching profile — show nothing (RequireAuth already showed the spinner)
   if (loading || !profile) return null
+
+  // Superadmin impersonating a restaurant: bypass the dashboard role guard
+  if (profile.role === 'superadmin' && impersonatedRestaurantId) {
+    return <>{children}</>
+  }
 
   if (!allowed.includes(profile.role)) {
     const fallback =
@@ -77,6 +82,16 @@ function RoleGuard({
   }
 
   return <>{children}</>
+}
+
+// ─── RoleBasedRedirect ────────────────────────────────────────────────────────
+/** Sends each role to their correct home instead of always bouncing via /dashboard. */
+function RoleBasedRedirect() {
+  const { profile, loading } = useAuth()
+  if (loading || !profile) return <Spinner />
+  return <Navigate to={
+    profile.role === 'superadmin' ? '/superadmin/restaurants' : '/dashboard'
+  } replace />
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -124,9 +139,9 @@ function AppRoutes() {
         <Route path="users"           element={<Users />} />
       </Route>
 
-      {/* ── Catch-all: redirect to dashboard (RequireAuth will gate it) ── */}
-      <Route path="/"  element={<Navigate to="/dashboard" replace />} />
-      <Route path="*"  element={<Navigate to="/dashboard" replace />} />
+      {/* ── Catch-all: send each role to their correct home ── */}
+      <Route path="/"  element={<RequireAuth><RoleBasedRedirect /></RequireAuth>} />
+      <Route path="*"  element={<RequireAuth><RoleBasedRedirect /></RequireAuth>} />
     </Routes>
   )
 }

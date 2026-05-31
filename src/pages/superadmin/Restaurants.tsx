@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Plus, Loader2, Building2, Pencil, Eye, EyeOff } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Plus, Loader2, Building2, Pencil, Eye, EyeOff, LayoutDashboard } from 'lucide-react'
 import { Header } from '@/components/layout/Header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,6 +11,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { Select } from '@/components/ui/select'
 import { supabase } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
+import { useAuth } from '@/hooks/useAuth'
 import type { Restaurant } from '@/types/database'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -35,6 +37,9 @@ const TIMEZONES = [
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function Restaurants() {
+  const { setImpersonation } = useAuth()
+  const navigate = useNavigate()
+
   const [restaurants, setRestaurants] = useState<Restaurant[]>([])
   const [loading, setLoading]         = useState(true)
 
@@ -203,6 +208,16 @@ export function Restaurants() {
                 <p className="text-xs text-muted-foreground shrink-0">
                   {formatDate(r.created_at)}
                 </p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  onClick={() => { setImpersonation(r.id, r.name); navigate('/dashboard') }}
+                  title="Enter dashboard"
+                >
+                  <LayoutDashboard className="h-3.5 w-3.5" />
+                </Button>
                 <Button
                   type="button"
                   variant="ghost"

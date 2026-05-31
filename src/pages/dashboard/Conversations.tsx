@@ -4,7 +4,7 @@ import { Header } from '@/components/layout/Header'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { formatRelativeDate, formatDateTime } from '@/lib/utils'
-import { useAuth } from '@/hooks/useAuth'
+import { useRestaurantId } from '@/hooks/useAuth'
 import { useConversations, useConversationMessages } from '@/hooks/useConversations'
 import type { ConversationWithCount } from '@/hooks/useConversations'
 
@@ -148,8 +148,7 @@ function ChatPanel({ conversationId, whatsappNumber }: ChatPanelProps) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function Conversations() {
-  const { profile } = useAuth()
-  const restaurantId = profile?.restaurant_id ?? ''
+  const restaurantId = useRestaurantId()
 
   const { data: conversations = [], isLoading } = useConversations(restaurantId)
   const [selectedId, setSelectedId] = useState<string | null>(null)

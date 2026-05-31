@@ -7,7 +7,13 @@
  */
 export { useAuthContext as useAuth } from '@/contexts/AuthContext'
 
+import { useAuthContext } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+
+export function useRestaurantId(): string {
+  const { profile, impersonatedRestaurantId } = useAuthContext()
+  return impersonatedRestaurantId ?? profile?.restaurant_id ?? ''
+}
 
 export async function signIn(email: string, password: string) {
   return supabase.auth.signInWithPassword({ email, password })

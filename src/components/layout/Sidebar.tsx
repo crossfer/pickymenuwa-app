@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import logo from '@/assets/logo512.png'
 import { cn } from '@/lib/utils'
-import { signOut } from '@/hooks/useAuth'
+import { signOut, useAuth } from '@/hooks/useAuth'
 import type { Profile } from '@/types/database'
 
 interface SidebarProps {
@@ -44,7 +44,8 @@ const superadminNavItems: NavItem[] = [
 
 export function Sidebar({ profile, isOpen, onClose }: SidebarProps) {
   const navigate = useNavigate()
-  const isSuperadmin = profile?.role === 'superadmin'
+  const { impersonatedRestaurantId } = useAuth()
+  const isSuperadmin = profile?.role === 'superadmin' && !impersonatedRestaurantId
   const navItems = isSuperadmin ? superadminNavItems : adminNavItems
 
   const handleSignOut = async () => {

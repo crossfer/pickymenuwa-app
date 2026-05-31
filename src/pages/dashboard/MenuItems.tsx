@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { MenuItemCard } from '@/components/menu/MenuItemCard'
 import { ImageUpload } from '@/components/menu/ImageUpload'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuth, useRestaurantId } from '@/hooks/useAuth'
 import {
   useMenuItems,
   useCreateMenuItem,
@@ -567,7 +567,7 @@ function ItemFormDialog({
 
 export function MenuItems() {
   const { profile } = useAuth()
-  const restaurantId = profile?.restaurant_id ?? ''
+  const restaurantId = useRestaurantId()
   const isAdmin = profile?.role === 'admin' || profile?.role === 'superadmin'
   const isStaff = profile?.role === 'staff'
 

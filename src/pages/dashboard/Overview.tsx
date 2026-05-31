@@ -1,9 +1,10 @@
-import { Link } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { UtensilsCrossed, FolderOpen, ToggleLeft, Star, ArrowRight } from 'lucide-react'
 import { Header } from '@/components/layout/Header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuth, useRestaurantId } from '@/hooks/useAuth'
 import { useMenuItems } from '@/hooks/useMenu'
 import { useCategories } from '@/hooks/useCategories'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -40,8 +41,16 @@ function StatCard({ title, value, description, icon, href }: StatCardProps) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function Overview() {
-  const { profile } = useAuth()
-  const restaurantId = profile?.restaurant_id ?? undefined
+  const { profile, impersonatedRestaurantId } = useAuth()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (profile?.role === 'superadmin' && !impersonatedRestaurantId) {
+      navigate('/superadmin/restaurants', { replace: true })
+    }
+  }, [profile, impersonatedRestaurantId, navigate])
+
+  const restaurantId = useRestaurantId()
   const { data: items = [] } = useMenuItems(restaurantId)
   const { data: categories = [] } = useCategories(restaurantId)
 
