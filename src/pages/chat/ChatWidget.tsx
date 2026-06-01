@@ -116,7 +116,7 @@ export function ChatWidget() {
       metadata: { session_id: sessionId },
       initialMessages: [
       'Welcome to Ugo Trattoria! 🍷',
-      'Can I start you off with something to drink? — ¿Les traigo algo de tomar? — Posso portarvi qualcosa da bere? — Puis-je vous apporter quelque chose à boire? — Darf ich Ihnen etwas zu trinken bringen? — 我可以先为您上点饮料吗？'],
+      '🇺🇸 Something to drink?\n🇪🇸 ¿Algo de tomar?\n🇮🇹 Qualcosa da bere?\n🇫🇷 Quelque chose à boire?\n🇩🇪 Etwas zu trinken?\n🇨🇳 来点饮料吗?'],
       i18n: {
         en: {
           title: 'Chef ',
