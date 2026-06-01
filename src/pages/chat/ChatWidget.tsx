@@ -153,7 +153,6 @@ export function ChatWidget() {
       </div>
     )
   }
-
   return (
     <>
       <style>{CHAT_THEME_CSS}</style>
@@ -168,10 +167,16 @@ export function ChatWidget() {
           {restaurant.name}
         </h1>
         <div style={{ width: '60px', height: '2px', background: '#C39600', marginBottom: '20px' }} />
-        <p style={{ color: '#888', fontSize: '14px' }}>
-          Tap the chat bubble to explore our menu
-        </p>
+        <div style={{ color: '#888', fontSize: '13px', textAlign: 'center', lineHeight: '2' }}>
+          <div>🇺🇸 Tap the bubble</div>
+          <div>🇪🇸 Toca la burbuja</div>
+          <div>🇮🇹 Tocca la bolla</div>
+          <div>🇫🇷 Appuyez sur la bulle</div>
+          <div>🇩🇪 Tippe auf die Blase</div>
+          <div>🇨🇳 点击气泡</div>
+        </div>
       </div>
     </>
   )
 }
+ 
