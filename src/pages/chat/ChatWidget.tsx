@@ -115,7 +115,7 @@ export function ChatWidget() {
       sessionId,
       metadata: { session_id: sessionId },
       initialMessages: [
-      'Welcome to ${restaurant.name}! 🍷',
+      `Welcome to ${restaurant.name}! 🍷`,
       '🇺🇸 Something to drink?\n🇪🇸 ¿Algo de tomar?\n🇮🇹 Qualcosa da bere?\n🇫🇷 Quelque chose à boire?\n🇩🇪 Etwas zu trinken?\n🇨🇳 来点饮料吗?'],
       i18n: {
         en: {
