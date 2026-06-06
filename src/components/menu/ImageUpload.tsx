@@ -13,6 +13,7 @@ interface ImageUploadProps {
 export function ImageUpload({ currentUrl, onFileSelect, onRemove, className }: ImageUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<string | null>(null)
+  const [removed, setRemoved] = useState(false)
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -20,16 +21,18 @@ export function ImageUpload({ currentUrl, onFileSelect, onRemove, className }: I
 
     const objectUrl = URL.createObjectURL(file)
     setPreview(objectUrl)
+    setRemoved(false)
     onFileSelect(file)
   }
 
   const handleRemove = () => {
     setPreview(null)
+    setRemoved(true)
     if (inputRef.current) inputRef.current.value = ''
     onRemove?.()
   }
 
-  const displayUrl = preview ?? currentUrl
+  const displayUrl = removed ? null : (preview ?? currentUrl)
 
   return (
     <div className={cn('relative', className)}>
@@ -40,11 +43,12 @@ export function ImageUpload({ currentUrl, onFileSelect, onRemove, className }: I
             alt="Menu item"
             className="h-40 w-full rounded-lg object-cover"
           />
-          <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-lg bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 rounded-lg bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
             <Button
               type="button"
               variant="secondary"
               size="sm"
+              className="pointer-events-auto relative z-10"
               onClick={() => inputRef.current?.click()}
             >
               Change
@@ -53,7 +57,7 @@ export function ImageUpload({ currentUrl, onFileSelect, onRemove, className }: I
               type="button"
               variant="destructive"
               size="icon"
-              className="h-8 w-8"
+              className="pointer-events-auto relative z-10 h-8 w-8"
               onClick={handleRemove}
             >
               <X className="h-4 w-4" />

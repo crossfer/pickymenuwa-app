@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Plus, Clock, Trash2, Loader2, Search, UtensilsCrossed } from 'lucide-react'
 import { Header } from '@/components/layout/Header'
 import { Dialog } from '@/components/ui/dialog'
@@ -18,11 +18,10 @@ import {
   useUpdateMenuItem,
   useDeleteMenuItem,
   useToggleAvailability,
-  useItemPairings,
-  useSyncPairings,
 } from '@/hooks/useMenu'
 import { useCategories } from '@/hooks/useCategories'
 import type { MenuItem, MenuItemWithSchedules, ItemSchedule } from '@/types/database'
+import { deleteMenuImage } from '@/lib/storage'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -38,11 +37,6 @@ interface ScheduleDraft {
   time_end: string
 }
 
-interface PairingDraft {
-  paired_item_id: string
-  pairing_note: string
-}
-
 interface ItemFormState {
   name: string
   description: string
@@ -51,6 +45,7 @@ interface ItemFormState {
   available: boolean
   chef_recommendation: boolean
   chef_note: string
+  pairing_notes: string
 }
 
 const defaultForm: ItemFormState = {
@@ -61,6 +56,7 @@ const defaultForm: ItemFormState = {
   available: true,
   chef_recommendation: false,
   chef_note: '',
+  pairing_notes: '',
 }
 
 // ─── ScheduleRow ──────────────────────────────────────────────────────────────
@@ -136,60 +132,6 @@ function ScheduleRow({ schedule, onChange, onRemove }: ScheduleRowProps) {
   )
 }
 
-// ─── PairingRow ───────────────────────────────────────────────────────────────
-
-interface PairingRowProps {
-  item: MenuItem
-  categoryName: string
-  selected: boolean
-  note: string
-  onToggle: () => void
-  onNoteChange: (note: string) => void
-}
-
-function PairingRow({ item, categoryName, selected, note, onToggle, onNoteChange }: PairingRowProps) {
-  return (
-    <div
-      className={`rounded-lg border transition-colors ${
-        selected ? 'border-primary/50 bg-primary/5' : 'border-input bg-background'
-      }`}
-    >
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
-      >
-        <span
-          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold transition-colors ${
-            selected
-              ? 'border-primary bg-primary text-primary-foreground'
-              : 'border-input bg-background'
-          }`}
-        >
-          {selected && '✓'}
-        </span>
-        <span className="flex-1 text-sm font-medium">{item.name}</span>
-        {categoryName && (
-          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
-            {categoryName}
-          </span>
-        )}
-      </button>
-
-      {selected && (
-        <div className="border-t border-primary/20 px-3 pb-2.5 pt-2">
-          <Input
-            placeholder="Pairing note (optional)…"
-            value={note}
-            onChange={(e) => onNoteChange(e.target.value)}
-            className="h-7 text-xs"
-          />
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ─── ItemFormDialog ───────────────────────────────────────────────────────────
 
 interface ItemFormDialogProps {
@@ -215,9 +157,8 @@ function ItemFormDialog({
   isStaff,
   onSaved,
 }: ItemFormDialogProps) {
-  const createItem    = useCreateMenuItem()
-  const updateItem    = useUpdateMenuItem()
-  const syncPairings  = useSyncPairings()
+  const createItem = useCreateMenuItem()
+  const updateItem = useUpdateMenuItem()
 
   const [form, setForm] = useState<ItemFormState>(() =>
     editingItem
@@ -229,10 +170,12 @@ function ItemFormDialog({
           available:           editingItem.available,
           chef_recommendation: editingItem.chef_recommendation,
           chef_note:           editingItem.chef_note ?? '',
+          pairing_notes:       editingItem.pairing_notes ?? '',
         }
       : defaultForm
   )
   const [imageFile,  setImageFile]  = useState<File | undefined>(undefined)
+  const [removeImage, setRemoveImage] = useState(false)
   const [schedules,  setSchedules]  = useState<ScheduleDraft[]>(() =>
     editingItem
       ? editingItem.item_schedules.map((s: ItemSchedule) => ({
@@ -243,45 +186,17 @@ function ItemFormDialog({
         }))
       : []
   )
-  const [pairings,   setPairings]   = useState<PairingDraft[]>([])
-  const [pairSearch, setPairSearch] = useState('')
-
-  const { data: existingPairings } = useItemPairings(editingItem?.id)
-
-  useEffect(() => {
-    if (existingPairings) {
-      setPairings(
-        existingPairings.map((p) => ({
-          paired_item_id: p.paired_item_id,
-          pairing_note:   p.pairing_note ?? '',
-        }))
-      )
-    }
-  }, [existingPairings])
-
   const categoryMap = Object.fromEntries(categories.map((c) => [c.id, c.name]))
+  const otherItems  = allItems.filter((i) => i.id !== editingItem?.id)
 
-  const otherItems = allItems
-    .filter((i) => i.id !== editingItem?.id)
-    .filter((i) =>
-      pairSearch.trim() === '' ||
-      i.name.toLowerCase().includes(pairSearch.toLowerCase()) ||
-      categoryMap[i.category_id ?? '']?.toLowerCase().includes(pairSearch.toLowerCase())
-    )
-
-  const togglePairing = (itemId: string) => {
-    setPairings((prev) => {
-      const exists = prev.find((p) => p.paired_item_id === itemId)
-      return exists
-        ? prev.filter((p) => p.paired_item_id !== itemId)
-        : [...prev, { paired_item_id: itemId, pairing_note: '' }]
-    })
-  }
-
-  const updatePairingNote = (itemId: string, note: string) => {
-    setPairings((prev) =>
-      prev.map((p) => (p.paired_item_id === itemId ? { ...p, pairing_note: note } : p))
-    )
+  const handleAddPairing = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const name = e.target.value
+    if (!name) return
+    setForm((f) => ({
+      ...f,
+      pairing_notes: f.pairing_notes ? `${f.pairing_notes}, ${name}` : name,
+    }))
+    e.target.value = ''
   }
 
   const addSchedule = () => {
@@ -291,7 +206,7 @@ function ItemFormDialog({
     ])
   }
 
-  const isSaving = createItem.isPending || updateItem.isPending || syncPairings.isPending
+  const isSaving = createItem.isPending || updateItem.isPending
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -304,14 +219,20 @@ function ItemFormDialog({
       available:           form.available,
       chef_recommendation: form.chef_recommendation,
       chef_note:           form.chef_note || null,
+      pairing_notes:       form.pairing_notes || null,
       image_url:           editingItem?.image_url ?? null,
     }
 
     if (editingItem) {
-      const originalIds        = editingItem.item_schedules.map((s: ItemSchedule) => s.id)
-      const keptIds            = schedules.filter((s) => s.id).map((s) => s.id as string)
+      if (removeImage) {
+        await deleteMenuImage(restaurantId, editingItem.id)
+        values.image_url = null
+      }
+
+      const originalIds         = editingItem.item_schedules.map((s: ItemSchedule) => s.id)
+      const keptIds             = schedules.filter((s) => s.id).map((s) => s.id as string)
       const scheduleIdsToDelete = originalIds.filter((id) => !keptIds.includes(id))
-      const schedulesToAdd     = schedules
+      const schedulesToAdd      = schedules
         .filter((s) => !s.id)
         .map((s) => ({ day_of_week: s.day_of_week, time_start: s.time_start, time_end: s.time_end }))
 
@@ -323,12 +244,8 @@ function ItemFormDialog({
         scheduleIdsToDelete,
         schedulesToAdd,
       })
-
-      if (isAdmin) {
-        await syncPairings.mutateAsync({ itemId: editingItem.id, pairings })
-      }
     } else {
-      const newItem = await createItem.mutateAsync({
+      await createItem.mutateAsync({
         restaurantId,
         values,
         imageFile,
@@ -338,10 +255,6 @@ function ItemFormDialog({
           time_end:    s.time_end,
         })),
       })
-
-      if (isAdmin && pairings.length > 0 && newItem) {
-        await syncPairings.mutateAsync({ itemId: newItem.id, pairings })
-      }
     }
 
     onSaved()
@@ -359,6 +272,7 @@ function ItemFormDialog({
         <ImageUpload
           currentUrl={editingItem?.image_url}
           onFileSelect={setImageFile}
+          onRemove={() => setRemoveImage(true)}
         />
 
         {/* Basic fields */}
@@ -446,72 +360,43 @@ function ItemFormDialog({
           )}
         </div>
 
-        {/* ── Pairings ──────────────────────────────────────────────────────── */}
-        {isAdmin && allItems.length > 1 && (
-          <div className="space-y-2 border-t pt-4">
-            <div>
-              <p className="text-sm font-medium">Pairings</p>
-              <p className="text-xs text-muted-foreground">
-                Suggest items that pair well together. The AI will use this to make recommendations.
-              </p>
-            </div>
-
-            {pairings.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pb-1">
-                {pairings.map((p) => {
-                  const paired = allItems.find((i) => i.id === p.paired_item_id)
-                  return paired ? (
-                    <Badge
-                      key={p.paired_item_id}
-                      variant="secondary"
-                      className="gap-1 pr-1 text-xs"
-                    >
-                      {paired.name}
-                      <button
-                        type="button"
-                        onClick={() => togglePairing(p.paired_item_id)}
-                        className="ml-0.5 rounded-full hover:bg-muted-foreground/20 px-0.5"
-                      >
-                        ×
-                      </button>
-                    </Badge>
-                  ) : null
-                })}
-              </div>
-            )}
-
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-              <Input
-                placeholder="Search items to pair…"
-                value={pairSearch}
-                onChange={(e) => setPairSearch(e.target.value)}
-                className="pl-8 h-8 text-sm"
-              />
-            </div>
-
-            <div className="max-h-52 overflow-y-auto space-y-1.5 pr-0.5">
-              {otherItems.length === 0 ? (
-                <p className="py-4 text-center text-xs text-muted-foreground">No items found</p>
-              ) : (
-                otherItems.map((item) => {
-                  const pairing = pairings.find((p) => p.paired_item_id === item.id)
-                  return (
-                    <PairingRow
-                      key={item.id}
-                      item={item}
-                      categoryName={categoryMap[item.category_id ?? ''] ?? ''}
-                      selected={!!pairing}
-                      note={pairing?.pairing_note ?? ''}
-                      onToggle={() => togglePairing(item.id)}
-                      onNoteChange={(note) => updatePairingNote(item.id, note)}
-                    />
-                  )
-                })
+        {/* ── Pairing notes ─────────────────────────────────────────────────── */}
+        <div className="space-y-1.5 border-t pt-4">
+          <Label htmlFor="pairing_notes">Pairing notes</Label>
+          {isAdmin && otherItems.length > 0 && (
+            <Select onChange={handleAddPairing} defaultValue="" disabled={isStaff}>
+              <option value="" disabled>— Add item pairing —</option>
+              {categories
+                .filter((cat) => otherItems.some((i) => i.category_id === cat.id))
+                .map((cat) => (
+                  <optgroup key={cat.id} label={cat.name}>
+                    {otherItems
+                      .filter((i) => i.category_id === cat.id)
+                      .map((i) => (
+                        <option key={i.id} value={i.name}>{i.name}</option>
+                      ))}
+                  </optgroup>
+                ))}
+              {otherItems.filter((i) => !i.category_id || !categoryMap[i.category_id]).length > 0 && (
+                <optgroup label="No category">
+                  {otherItems
+                    .filter((i) => !i.category_id || !categoryMap[i.category_id])
+                    .map((i) => (
+                      <option key={i.id} value={i.name}>{i.name}</option>
+                    ))}
+                </optgroup>
               )}
-            </div>
-          </div>
-        )}
+            </Select>
+          )}
+          <Textarea
+            id="pairing_notes"
+            rows={2}
+            placeholder="e.g. Pairs well with Chianti DOCG, Pinot Grigio…"
+            value={form.pairing_notes}
+            onChange={(e) => setForm((f) => ({ ...f, pairing_notes: e.target.value }))}
+            disabled={isStaff}
+          />
+        </div>
 
         {/* ── Schedules ─────────────────────────────────────────────────────── */}
         {isAdmin && (

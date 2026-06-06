@@ -124,6 +124,7 @@ export type Database = {
           available: boolean
           chef_recommendation: boolean
           chef_note: string | null
+          pairing_notes: string | null
           created_at: string
           updated_at: string
         }
@@ -138,6 +139,7 @@ export type Database = {
           available?: boolean
           chef_recommendation?: boolean
           chef_note?: string | null
+          pairing_notes?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -152,6 +154,7 @@ export type Database = {
           available?: boolean
           chef_recommendation?: boolean
           chef_note?: string | null
+          pairing_notes?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -268,42 +271,6 @@ export type Database = {
           }
         ]
       }
-      item_pairings: {
-        Row: {
-          id: string
-          item_id: string
-          paired_item_id: string
-          pairing_note: string | null
-        }
-        Insert: {
-          id?: string
-          item_id: string
-          paired_item_id: string
-          pairing_note?: string | null
-        }
-        Update: {
-          id?: string
-          item_id?: string
-          paired_item_id?: string
-          pairing_note?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: 'item_pairings_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'menu_items'
-            referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'item_pairings_paired_item_id_fkey'
-            columns: ['paired_item_id']
-            isOneToOne: false
-            referencedRelation: 'menu_items'
-            referencedColumns: ['id']
-          }
-        ]
-      }
     }
     Views: {
       [_ in never]: never
@@ -336,8 +303,6 @@ export type MenuItem = Database['public']['Tables']['menu_items']['Row']
 export type ItemSchedule = Database['public']['Tables']['item_schedules']['Row']
 export type Conversation = Database['public']['Tables']['conversations']['Row']
 export type Message = Database['public']['Tables']['messages']['Row']
-
-export type ItemPairing = Database['public']['Tables']['item_pairings']['Row']
 
 export type UserRole = 'superadmin' | 'admin' | 'staff'
 
